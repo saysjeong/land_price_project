@@ -20,6 +20,10 @@ st.set_page_config(
 # 주소 → PNU 조회 (디버깅 로그 추가)
 # =========================================================
 
+# =========================================================
+# 주소 → PNU 조회 (디버깅 기능 추가)
+# =========================================================
+
 def get_pnu(address, api_key):
     url = "https://api.vworld.kr/req/address"
     params = {
@@ -39,13 +43,20 @@ def get_pnu(address, api_key):
         response = requests.get(url, params=params, timeout=10)
         data = response.json()
 
-        if data.get("response", {}).get("status") != "OK":
+        # 응답 상태 확인
+        resp_status = data.get("response", {}).get("status", "")
+        
+        if resp_status != "OK":
+            # 만약 에러가 발생했다면 VWorld가 보낸 에러 메시지를 화면에 띄울 수 있도록 기록
+            error_text = data.get("response", {}).get("error", {}).get("message", "알 수 없는 API 오류")
+            st.error(f"⚠️ VWorld API 거부 사유: {error_text} (상태: {resp_status})")
             return ""
 
         structure = data["response"]["refined"]["structure"]
         return structure.get("level4LC", "")
 
     except Exception as e:
+        st.error(f"⚠️ 통신 중 예외가 발생했습니다: {e}")
         return ""
 
 
