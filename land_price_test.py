@@ -38,16 +38,19 @@ def get_pnu(address, api_key):
         "type": "PARCEL",
         "key": api_key
     }
+    
+    # 공공 API 서버가 봇 차단을 하지 않도록 브라우저 헤더 추가
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+    }
 
     try:
-        response = requests.get(url, params=params, timeout=10)
+        response = requests.get(url, params=params, headers=headers, timeout=10)
         data = response.json()
 
-        # 응답 상태 확인
         resp_status = data.get("response", {}).get("status", "")
         
         if resp_status != "OK":
-            # 만약 에러가 발생했다면 VWorld가 보낸 에러 메시지를 화면에 띄울 수 있도록 기록
             error_text = data.get("response", {}).get("error", {}).get("message", "알 수 없는 API 오류")
             st.error(f"⚠️ VWorld API 거부 사유: {error_text} (상태: {resp_status})")
             return ""
