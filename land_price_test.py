@@ -1,174 +1,65 @@
 import streamlit as st
-import pandas as pd
 import requests
-import time
-import io
 
-API_KEY = "52E81169-9BCC-4214-9C27-3C38093F4356"
+st.title("VWorld API 연결 테스트")
 
-# =========================================================
-# 기본 설정
-# =========================================================
-
-st.set_page_config(
-    page_title="개별공시지가 조회 시스템",
-    page_icon="🏠",
-    layout="centered"
+# VWorld 인증키
+api_key = st.text_input(
+    "VWorld API Key",
+    type="password"
 )
 
-# =========================================================
-# 주소 → PNU 조회 (디버깅 로그 추가)
-# =========================================================
+if st.button("VWorld 연결 테스트"):
 
-# =========================================================
-# 주소 → PNU 조회 (디버깅 기능 추가)
-# =========================================================
+    if not api_key:
+        st.error("API Key를 입력하세요.")
+        st.stop()
 
-def get_pnu(address, api_key):
     url = "https://api.vworld.kr/req/address"
+
     params = {
         "service": "address",
         "request": "getcoord",
         "version": "2.0",
         "crs": "epsg:4326",
-        "address": address,
+        "address": "서울특별시 성동구 마장동 336-7",
         "refine": "true",
         "simple": "false",
         "format": "json",
         "type": "PARCEL",
         "key": api_key
     }
-    
-    # 공공 API 서버가 봇 차단을 하지 않도록 브라우저 헤더 추가
-    headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-    }
+
+    st.write("① VWorld 서버 접속 테스트 중...")
 
     try:
-        response = requests.get(url, params=params, headers=headers, timeout=10)
-        data = response.json()
+        response = requests.get(
+            url,
+            params=params,
+            timeout=20
+        )
 
-        resp_status = data.get("response", {}).get("status", "")
-        
-        if resp_status != "OK":
-            error_text = data.get("response", {}).get("error", {}).get("message", "알 수 없는 API 오류")
-            st.error(f"⚠️ VWorld API 거부 사유: {error_text} (상태: {resp_status})")
-            return ""
+        st.write("HTTP 상태 코드:", response.status_code)
 
-        structure = data["response"]["refined"]["structure"]
-        return structure.get("level4LC", "")
+        st.write("응답 주소:")
+        st.code(response.url)
+
+        st.write("응답 내용:")
+
+        try:
+            data = response.json()
+            st.json(data)
+
+        except Exception:
+            st.code(response.text)
+
+    except requests.exceptions.Timeout:
+        st.error("❌ 20초 동안 VWorld 서버에서 응답이 없습니다.")
+
+    except requests.exceptions.ConnectionError as e:
+        st.error("❌ VWorld 서버에 연결하지 못했습니다.")
+        st.code(str(e))
 
     except Exception as e:
-        st.error(f"⚠️ 통신 중 예외가 발생했습니다: {e}")
-        return ""
-
-
-# =========================================================
-# PNU → 개별공시지가 조회
-# =========================================================
-
-def get_land_price(pnu, api_key, year):
-    url = "https://api.vworld.kr/ned/data/getIndvdLandPriceAttr"
-    params = {
-        "key": api_key,
-        "pnu": pnu,
-        "stdrYear": year,
-        "format": "json",
-        "numOfRows": "10",
-        "pageNo": "1"
-    }
-
-    try:
-        response = requests.get(url, params=params, timeout=10)
-        data = response.json()
-
-        fields = data.get("indvdLandPrices", {}).get("field", [])
-
-        if len(fields) == 0:
-            return None
-
-        field = fields[0]
-        return {
-            "price": field.get("pblntfPclnd", ""),
-            "date": field.get("pblntfDe", ""),
-            "legal_dong": field.get("ldCodeNm", ""),
-            "parcel": field.get("mnnmSlno", ""),
-            "year": field.get("stdrYear", year)
-        }
-
-    except Exception:
-        return None
-
-
-# =========================================================
-# 화면 레이아웃 구성
-# =========================================================
-
-st.title("🏠 개별공시지가 조회 시스템(API 활용)")
-
-st.subheader("⚙️ 기본 설정")
-
-with st.form("stand_form"):
-    col1, col2 = st.columns([1, 2], vertical_alignment="bottom")
-    with col1:
-        year = st.text_input("**기준연도**", value="2026")
-
-st.subheader("① 개별 주소 조회")
-
-with st.container(border=True):
-    with st.form("single_address_form"):
-        col_addr, col_btn = st.columns([5, 1.5], vertical_alignment="bottom")
-
-        with col_addr:
-            address = st.text_input(
-                "※ 정확한 조회를 위해 시·군·구를 포함한 전체 지번주소를 입력하세요",
-                placeholder="예: 서울특별시 성동구 행당동 7"
-            )
-
-        with col_btn:
-            search_clicked = st.form_submit_button(
-                "개별공시지가조회",
-                type="primary",
-                use_container_width=True
-            )
-
-    if search_clicked:
-        if address.strip() == "":
-            st.warning("조회할 주소를 입력하세요.")
-        else:
-            with st.spinner("주소를 조회하고 있습니다..."):
-                pnu = get_pnu(address.strip(), API_KEY)
-
-                if pnu == "":
-                    st.error("주소를 찾을 수 없거나 API 인증키 도메인 설정을 확인해주세요.")
-                else:
-                    result = get_land_price(pnu, API_KEY, year.strip())
-
-                    if result is None:
-                        st.warning(f"{year}년 개별공시지가 데이터를 찾을 수 없습니다.")
-                    else:
-                        st.success("✓ 개별공시지가 데이터 정상 확인")
-
-                        st.markdown("### 조회 결과")
-                        col1, col2, col3, col4, col5 = st.columns([0.2, 1.5, 3.3, 2, 5])
-
-                        with col2:
-                            st.write("**입력주소**")
-                            st.write("**기준연도**")
-                            st.write("**공시일**")
-                        with col3:
-                            st.write(address)
-                            st.write(result["year"])
-                            st.write(result["date"])
-                        with col4:
-                            st.write("**확인주소**")
-                            st.write("**PNU**")
-                            st.write("**개별공시지가**")
-                        with col5:
-                            st.write(result["legal_dong"] + " " + result["parcel"])
-                            st.write(pnu)                  
-                            if result["price"] != "":
-                                price_text = f'{int(result["price"]):,}원/㎡'
-                            else:
-                                price_text = "확인되지 않음"                    
-                            st.write(price_text)
+        st.error("❌ 예상하지 못한 오류")
+        st.code(str(e))
